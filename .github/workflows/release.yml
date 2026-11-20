@@ -1,0 +1,60 @@
+name: Release
+
+# Push a tag like v0.1.0: builds hyperdownload.exe for x64 and arm64, zips each with the licence, and publishes a GitHub release
+# with the zips and their SHA-256. rustyfiles installs the add-on from these zips, checking the SHA-256 against the list in its own
+# repository (addons.json).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release -p hyperdownload --target ${{ matrix.target }}
+      - name: Zip
+        shell: pwsh
+        run: |
+          $v = '${{ github.ref_name }}'.TrimStart('v')
+          New-Item -ItemType Directory pack | Out-Null
+          Copy-Item target/${{ matrix.target }}/release/hyperdownload.exe, LICENSE, README.md pack
+          Copy-Item vendor/librqbit/LICENSE pack/LICENSE-librqbit
+          $zip = "hyperdownload-$v-${{ matrix.arch }}.zip"
+          Compress-Archive -Path pack/* -DestinationPath $zip
+          (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower() + "  $zip" | Out-File -Encoding ascii "$zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.arch }}
+          path: hyperdownload-*.zip*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "HyperDownload $v" --notes "HyperDownload $v. Installed from rustyfiles' Settings > Add-ons." hyperdownload-*.zip hyperdownload-*.zip.sha256

@@ -1,0 +1,27 @@
+1 ICON "hyperdownload.ico"
+
+1 VERSIONINFO
+FILEVERSION 0,1,0,0
+PRODUCTVERSION 0,1,0,0
+FILEOS 0x40004
+FILETYPE 0x1
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "FileDescription", "HyperDownload"
+      VALUE "ProductName", "HyperDownload"
+      VALUE "CompanyName", "gelenmedya"
+      VALUE "FileVersion", "0.1.0"
+      VALUE "ProductVersion", "0.1.0"
+      VALUE "OriginalFilename", "hyperdownload.exe"
+      VALUE "InternalName", "hyperdownload"
+      VALUE "LegalCopyright", "MIT, Özer Güzel (gelenmedya)"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x409, 1200
+  END
+END
