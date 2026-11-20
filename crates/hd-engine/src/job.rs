@@ -38,6 +38,34 @@ pub struct Status {
     pub connections: usize,
     /// Whether a pause keeps what was fetched (the server answers ranges and said the size).
     pub resumable: bool,
+    /// The file's pieces in order, each with what is written of it and whether a connection is on it now: what a progress bar draws
+    /// the connections' work from. One piece from 0 for a download without ranges.
+    pub segments: Vec<Segment>,
+}
+
+/// One piece of a download: its bytes `start..end`, how many of them are written from `start`, and whether a connection works on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Segment {
+    pub start: u64,
+    pub end: u64,
+    pub done: u64,
+    pub active: bool,
+}
+
+/// The pieces as [`Status::segments`] gives them, in the file's order.
+fn segments_of(b: &Book) -> Vec<Segment> {
+    if b.pieces.is_empty() {
+        let end = b.total.unwrap_or(b.streamed).max(b.streamed);
+        return if end == 0 { Vec::new() } else { vec![Segment { start: 0, end, done: b.streamed, active: b.phase == Phase::Running }] };
+    }
+    let mut out: Vec<Segment> = b
+        .pieces
+        .iter()
+        .enumerate()
+        .map(|(i, p)| Segment { start: p.start, end: p.end, done: p.done.min(p.end - p.start), active: b.busy.get(i).copied().unwrap_or(false) })
+        .collect();
+    out.sort_by_key(|s| s.start);
+    out
 }
 
 struct Book {
@@ -146,6 +174,7 @@ impl Download {
             speed: if b.phase == Phase::Running { b.speed } else { 0 },
             connections: b.workers,
             resumable: b.ranges && b.total.is_some(),
+            segments: segments_of(&b),
         }
     }
 

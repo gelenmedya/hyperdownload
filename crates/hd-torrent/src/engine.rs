@@ -296,6 +296,12 @@ impl Engine {
                 ..Default::default()
             }),
             client_name_and_version: Some(format!("torwatch {}", env!("CARGO_PKG_VERSION"))),
+            // the DHT's state in this engine's own data folder: the library's default is one file for every program on the PC, and a
+            // second engine (a portable copy beside the installed one, a test while it runs) failed to start on it
+            dht: Some(librqbit::DhtSessionConfig {
+                persistence: Some(librqbit::dht::DhtPersistenceConfig { config_filename: Some(data_dir.join("dht.json")), ..Default::default() }),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
@@ -800,6 +806,12 @@ impl Engine {
         let mut out: Vec<TorrentView> = ids.into_iter().filter_map(|id| self.view(id, false)).collect();
         out.sort_by(|a, b| b.id.cmp(&a.id));
         out
+    }
+
+    /// Which of the torrent's pieces are here (a progress bar's map); `None` before the torrent has its metadata.
+    pub fn have_pieces(&self, id: usize) -> Option<Vec<bool>> {
+        let (bf, n) = librqbit::api::Api::new(self.session.clone(), None).api_dump_haves(librqbit::api::TorrentIdOrHash::Id(id)).ok()?;
+        Some((0..n as usize).map(|i| bf.get(i).map(|b| *b).unwrap_or(false)).collect())
     }
 
     pub fn view(&self, id: usize, with_files: bool) -> Option<TorrentView> {

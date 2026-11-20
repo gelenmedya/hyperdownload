@@ -11,7 +11,7 @@ pub mod pieces;
 mod job;
 mod net;
 
-pub use job::{Download, Phase, Status, part_of, state_of};
+pub use job::{Download, Phase, Segment, Status, part_of, state_of};
 
 use std::path::PathBuf;
 

@@ -270,7 +270,7 @@ fn window(list: Vec<Value>, params: &[Value]) -> Value {
 fn all(hub: &Hub) -> Vec<Value> {
     let mut out: Vec<Value> = hub.http_jobs().into_iter().map(|(gid, d, dir)| http_status(gid, &d.status(), &d.url(), &dir, d.target())).collect();
     for e in hub.ended() {
-        let s = hd_engine::Status { phase: e.phase.clone(), name: e.target.as_ref().and_then(|t| t.file_name()).map(|n| n.to_string_lossy().into_owned()), total: None, done: 0, speed: 0, connections: 0, resumable: false };
+        let s = hd_engine::Status { phase: e.phase.clone(), name: e.target.as_ref().and_then(|t| t.file_name()).map(|n| n.to_string_lossy().into_owned()), total: None, done: 0, speed: 0, connections: 0, resumable: false, segments: Vec::new() };
         out.push(http_status(e.gid, &s, &e.url, &e.dir, e.target.clone()));
     }
     for t in hub.torrent.list() {
@@ -282,16 +282,24 @@ fn all(hub: &Hub) -> Vec<Value> {
     out
 }
 
+/// A torrent's status with its piece map ("hdMap": [`piece_map`] of 120 stretches), asked for one torrent at a time.
+fn with_map(hub: &Hub, id: usize, mut v: Value) -> Value {
+    if let Some(have) = hub.torrent.have_pieces(id) {
+        v["hdMap"] = json!(piece_map(&have, 120));
+    }
+    v
+}
+
 fn status_of(hub: &Hub, gid: u64) -> Option<Value> {
     match hub::named(gid) {
         Named::Http(g) => match hub.http(g) {
             Some(d) => Some(http_status(g, &d.status(), &d.url(), &hub.http_dir(g).unwrap_or_default(), d.target())),
             None => all(hub).into_iter().find(|s| s["gid"] == gid_text(g)),
         },
-        Named::Torrent(id) => hub.torrent.view(id, true).map(|t| torrent_status(&t, Some(()))),
+        Named::Torrent(id) => hub.torrent.view(id, true).map(|t| with_map(hub, id, torrent_status(&t, Some(())))),
         // (an addition that has become a torrent answers as that torrent: the caller follows one GID from the link to the end)
         Named::Adding(key) => match hub.torrent.resolved(key) {
-            Some(id) => hub.torrent.view(id, true).map(|t| torrent_status(&t, Some(()))),
+            Some(id) => hub.torrent.view(id, true).map(|t| with_map(hub, id, torrent_status(&t, Some(())))),
             None => hub.torrent.pending().into_iter().find(|p| p.key == key).map(|p| adding_status(&p)),
         },
     }
@@ -323,7 +331,40 @@ fn http_status(gid: u64, s: &hd_engine::Status, url: &str, dir: &std::path::Path
         "files": [{ "index": "1", "path": path, "length": total.to_string(), "completedLength": s.done.to_string(), "selected": "true", "uris": [{ "uri": url, "status": "used" }] }],
         "hdKind": "http",
         "hdResumable": s.resumable,
+        // the pieces, each [start, end, written, a connection on it]: the progress bar's segments (at most 64; more are merged)
+        "hdSegments": segments_json(&s.segments),
     })
+}
+
+/// [`http_status`]'s segments, at most [`MAX_SEGMENTS`]: neighbours are merged when there are more (their written bytes added, active
+/// when either is).
+fn segments_json(segs: &[hd_engine::Segment]) -> Value {
+    let mut v: Vec<hd_engine::Segment> = segs.to_vec();
+    while v.len() > MAX_SEGMENTS {
+        // the smallest neighbouring pair goes together
+        let i = (0..v.len() - 1).min_by_key(|&i| v[i + 1].end - v[i].start).unwrap_or(0);
+        let (a, b) = (v[i], v[i + 1]);
+        v[i] = hd_engine::Segment { start: a.start, end: b.end, done: a.done + b.done, active: a.active || b.active };
+        v.remove(i + 1);
+    }
+    Value::Array(v.iter().map(|s| json!([s.start, s.end, s.done, s.active])).collect())
+}
+
+const MAX_SEGMENTS: usize = 64;
+
+/// A torrent's pieces as `buckets` digits '0'..='9': how much of each stretch of the torrent is here (the progress bar's map).
+pub fn piece_map(have: &[bool], buckets: usize) -> String {
+    if have.is_empty() || buckets == 0 {
+        return String::new();
+    }
+    let n = have.len();
+    (0..buckets.min(n))
+        .map(|b| {
+            let (from, to) = (b * n / buckets.min(n), ((b + 1) * n / buckets.min(n)).max(b * n / buckets.min(n) + 1));
+            let got = have[from..to].iter().filter(|h| **h).count();
+            char::from(b'0' + (got * 9 / (to - from)) as u8)
+        })
+        .collect()
 }
 
 fn torrent_status(t: &TorrentView, _with_files: Option<()>) -> Value {
@@ -378,4 +419,26 @@ fn adding_status(p: &hd_torrent::engine::Pending) -> Value {
         // the file list is waiting for the user's choice (hd.choices / hd.choose)
         "hdChoice": p.choice.is_some(),
     })
+}
+
+#[cfg(test)]
+mod map_tests {
+    use super::*;
+
+    #[test]
+    fn a_torrent_map_and_an_http_bar_stay_small() {
+        // ten pieces, the first half here
+        let have: Vec<bool> = (0..10).map(|i| i < 5).collect();
+        assert_eq!(piece_map(&have, 10), "9999900000");
+        assert_eq!(piece_map(&have, 5), "99400", "the middle stretch is half here");
+        assert_eq!(piece_map(&have, 50), "9999900000", "never more stretches than pieces");
+        assert_eq!(piece_map(&[], 10), "");
+        let segs: Vec<hd_engine::Segment> = (0..100).map(|i| hd_engine::Segment { start: i * 10, end: i * 10 + 10, done: 5, active: i == 3 }).collect();
+        let v = segments_json(&segs);
+        let a = v.as_array().unwrap();
+        assert_eq!(a.len(), MAX_SEGMENTS);
+        let written: u64 = a.iter().map(|s| s[2].as_u64().unwrap()).sum();
+        assert_eq!(written, 500, "nothing written is lost in the merge");
+        assert_eq!(a.last().unwrap()[1].as_u64(), Some(1000));
+    }
 }
