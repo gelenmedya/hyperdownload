@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/hyperdownload-256.png" width="128" alt="HyperDownload"></p>
+
 # HyperDownload
 
 The download manager of [rustyfiles](https://github.com/gelenmedya/rustyfiles), as an optional add-on: install it from rustyfiles'
