@@ -146,7 +146,10 @@ async fn dispatch(hub: &Arc<Hub>, method: &str, params: &[Value]) -> Result<Valu
             match hub::named(gid) {
                 Named::Http(g) => hub.http(g).ok_or_else(|| bad("no such download"))?.pause(),
                 Named::Torrent(id) => hub.torrent.pause_torrent(id).await.map_err(|e| bad(e.to_string()))?,
-                Named::Adding(_) => return Err(bad("the torrent is still being added")),
+                Named::Adding(key) => match hub.torrent.resolved(key) {
+                    Some(id) => hub.torrent.pause_torrent(id).await.map_err(|e| bad(e.to_string()))?,
+                    None => return Err(bad("the torrent is still being added")),
+                },
             }
             hub.save();
             Ok(json!(gid_text(gid)))
@@ -156,7 +159,10 @@ async fn dispatch(hub: &Arc<Hub>, method: &str, params: &[Value]) -> Result<Valu
             match hub::named(gid) {
                 Named::Http(g) => hub.http(g).ok_or_else(|| bad("no such download"))?.resume(),
                 Named::Torrent(id) => hub.torrent.start_torrent(id).await.map_err(|e| bad(e.to_string()))?,
-                Named::Adding(_) => return Err(bad("the torrent is still being added")),
+                Named::Adding(key) => match hub.torrent.resolved(key) {
+                    Some(id) => hub.torrent.start_torrent(id).await.map_err(|e| bad(e.to_string()))?,
+                    None => return Err(bad("the torrent is still being added")),
+                },
             }
             Ok(json!(gid_text(gid)))
         }
@@ -168,7 +174,12 @@ async fn dispatch(hub: &Arc<Hub>, method: &str, params: &[Value]) -> Result<Valu
                 Named::Torrent(id) => {
                     hub.torrent.remove(id, false).await.map_err(|e| bad(e.to_string()))?;
                 }
-                Named::Adding(key) => hub.torrent.dismiss_pending(key),
+                Named::Adding(key) => match hub.torrent.resolved(key) {
+                    Some(id) => {
+                        hub.torrent.remove(id, false).await.map_err(|e| bad(e.to_string()))?;
+                    }
+                    None => hub.torrent.dismiss_pending(key),
+                },
             }
             hub.save();
             Ok(json!(gid_text(gid)))
@@ -274,7 +285,11 @@ fn status_of(hub: &Hub, gid: u64) -> Option<Value> {
             None => all(hub).into_iter().find(|s| s["gid"] == gid_text(g)),
         },
         Named::Torrent(id) => hub.torrent.view(id, true).map(|t| torrent_status(&t, Some(()))),
-        Named::Adding(key) => hub.torrent.pending().into_iter().find(|p| p.key == key).map(|p| adding_status(&p)),
+        // (an addition that has become a torrent answers as that torrent: the caller follows one GID from the link to the end)
+        Named::Adding(key) => match hub.torrent.resolved(key) {
+            Some(id) => hub.torrent.view(id, true).map(|t| torrent_status(&t, Some(()))),
+            None => hub.torrent.pending().into_iter().find(|p| p.key == key).map(|p| adding_status(&p)),
+        },
     }
 }
 

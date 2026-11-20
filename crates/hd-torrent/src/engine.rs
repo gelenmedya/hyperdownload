@@ -67,6 +67,9 @@ pub struct Settings {
     /// Harici oynatıcıda (mpv) sesi çözmeden AV alıcısına gönder: TrueHD Atmos, DTS:X, DD+ Atmos.
     #[serde(default)]
     pub passthrough: bool,
+    /// HyperDownload: ask for the files of every torrent that has more than one (torwatch asked only when it had two videos or more).
+    #[serde(default)]
+    pub ask_all_files: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -145,6 +148,8 @@ pub struct Engine {
     download_dir_fallback: Option<String>,
     data_dir: PathBuf,
     pending: Mutex<Vec<Pending>>,
+    /// HyperDownload: which torrent an addition (by its pending key) became, so that a caller following the key finds the torrent.
+    resolved: Mutex<HashMap<u64, usize>>,
     choosers: Mutex<HashMap<u64, tokio::sync::oneshot::Sender<Vec<usize>>>>,
     pending_seq: AtomicU64,
     focus_seq: AtomicU64,
@@ -237,6 +242,7 @@ fn load_settings(path: &Path, default_dir: &Path) -> Settings {
             download_dir: default_dir.to_path_buf(),
             ask_files: false,
             passthrough: false,
+            ask_all_files: false,
         })
 }
 
@@ -326,6 +332,7 @@ impl Engine {
             data_dir: data_dir.to_path_buf(),
             settings_path,
             pending: Mutex::new(Vec::new()),
+            resolved: Mutex::new(HashMap::new()),
             choosers: Mutex::new(HashMap::new()),
             pending_seq: AtomicU64::new(1),
             focus_seq: AtomicU64::new(0),
@@ -432,6 +439,16 @@ impl Engine {
         self.update_settings(|s| s.ask_files = on)
     }
 
+    /// HyperDownload: ask for the files of every torrent with more than one.
+    pub fn set_ask_all_files(&self, on: bool) -> anyhow::Result<()> {
+        self.update_settings(|s| s.ask_all_files = on)
+    }
+
+    /// The torrent the addition with this pending key became, once it has.
+    pub fn resolved(&self, key: u64) -> Option<usize> {
+        self.resolved.lock().unwrap().get(&key).copied()
+    }
+
     pub fn set_passthrough(&self, on: bool) -> anyhow::Result<()> {
         self.update_settings(|s| s.passthrough = on)
     }
@@ -493,6 +510,7 @@ impl Engine {
             let mut list = this.pending.lock().unwrap();
             match res {
                 Ok(id) => {
+                    this.resolved.lock().unwrap().insert(key, id);
                     this.record_source(id, &source);
                     list.retain(|p| p.key != key);
                     drop(list);
@@ -539,7 +557,8 @@ impl Engine {
             .collect();
         let suggested = media::pick_files(&files);
         // Yalnızca ≥2 aday video varsa sor; tek video + altyazı/nfo için öneri doğrudan uygulanır.
-        let only_files = if self.settings().ask_files && files.len() > 1 && media::needs_choice(&files) {
+        let s = self.settings();
+        let only_files = if s.ask_files && files.len() > 1 && (s.ask_all_files || media::needs_choice(&files)) {
             let chosen = self.ask_choice(key, &files, suggested).await?;
             (chosen.len() < files.len()).then_some(chosen)
         } else {

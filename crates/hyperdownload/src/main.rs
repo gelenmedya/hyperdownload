@@ -75,6 +75,9 @@ fn serve(args: &[String]) {
         let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await.expect("a local port");
         let port = listener.local_addr().expect("its port").port();
         let _ = engine.port.set(port);
+        // the file list of a torrent with more than one file waits for the user's choice (rustyfiles asks: hd.choices, hd.choose)
+        let _ = engine.set_ask_files(true);
+        let _ = engine.set_ask_all_files(true);
         let hub = Arc::new(Hub::new(secret(), data.clone(), downloads, engine.clone()));
         write_rpc_file(&data, port, &hub.token);
 
