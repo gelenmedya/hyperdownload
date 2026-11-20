@@ -8,6 +8,7 @@
 
 mod host;
 mod hub;
+mod register;
 mod rpc;
 
 use std::path::PathBuf;
@@ -31,6 +32,17 @@ fn main() {
         Some("serve") => serve(&args[1..]),
         // the browser starts the host with the extension's origin as its argument
         Some("--native-host") => host::run(),
+        Some("--register") => match register::register() {
+            Ok(p) => println!("registered for Chrome, Edge, Brave and Chromium: {}", p.display()),
+            Err(e) => {
+                eprintln!("not registered: {e}");
+                std::process::exit(1);
+            }
+        },
+        Some("--unregister") => {
+            register::unregister();
+            println!("unregistered");
+        }
         Some(a) if a.starts_with("chrome-extension://") => host::run(),
         Some("get") if args.len() >= 2 => {
             let dir = args.get(2).map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());

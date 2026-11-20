@@ -133,6 +133,9 @@ fn add(p: &Places, msg: &Value) -> Value {
     if let Some(r) = msg.get("referer").and_then(Value::as_str).filter(|r| !r.is_empty()) {
         options["referer"] = json!(r);
     }
+    if let Some(f) = msg.get("finalUrl").and_then(Value::as_str).filter(|f| *f != url) {
+        options["hd-fallback-uri"] = json!(f);
+    }
     match call(port, &token, "aria2.addUri", vec![json!([url]), options]) {
         Ok(gid) => {
             // rustyfiles shows it as a card of its Status Center (a running one takes it as a message)

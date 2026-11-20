@@ -353,3 +353,22 @@ fn a_known_checksum_is_checked_and_the_file_is_marked_as_from_the_internet() {
         assert!(text.contains("ZoneId=3") && text.contains("ReferrerUrl=https://example.com/page") && text.contains("/c.bin"), "{text}");
     }
 }
+
+#[test]
+fn a_refused_link_is_tried_once_from_where_the_browser_got_to() {
+    let refusing = serve(10, Rules { status: Some(403), ..Default::default() });
+    let good = serve(MB, Rules { ranges: true, ..Default::default() });
+    let dir = folder("fallback");
+    let d = Download::start(Request {
+        url: url(&refusing, "one-time.bin"),
+        fallback_url: Some(url(&good, "final.bin")),
+        dir: dir.clone(),
+        cookie: Some("session=1".into()),
+        ..Default::default()
+    });
+    let p = done_path(&d);
+    assert_eq!(std::fs::read(&p).unwrap(), *good.body);
+    // without a second address the refusal stands
+    let d = Download::start(Request { url: url(&refusing, "one-time.bin"), dir: dir.clone(), ..Default::default() });
+    assert!(matches!(d.wait().phase, Phase::Failed(ref e) if e.contains("403")));
+}

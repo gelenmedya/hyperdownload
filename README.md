@@ -39,7 +39,11 @@ another host name are refused.
 
 `extension/` is the Chrome and Edge extension (Manifest V3, id `pbnficneolckhnkmpagjimjbhjahcepa` while it is loaded unpacked). It
 hands the browser's downloads to HyperDownload through native messaging (`hyperdownload.exe --native-host`, registered by
-rustyfiles when it installs the add-on). Small files, sites you list and links clicked with Alt held stay with the browser.
+rustyfiles when it installs the add-on, or by hand with `hyperdownload --register`). The browser's own download is paused, not
+cancelled, while the extension decides: one HyperDownload does not take goes on in the browser where it was, so a one-time link
+stays good. Small files, sites you list, downloads that answer a posted form and links clicked with Alt held stay with the
+browser; a private window's download goes with that window's cookies. When a site refuses the link itself, HyperDownload tries
+once from the address the browser's download had reached (without the cookies, if that is another site).
 
 To try it before it is in the stores: install HyperDownload from rustyfiles (Settings › Add-ons), open `chrome://extensions`
 (or `edge://extensions`), switch on Developer mode, and "Load unpacked" the `extension` folder.

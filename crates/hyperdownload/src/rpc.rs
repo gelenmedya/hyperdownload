@@ -128,7 +128,9 @@ async fn dispatch(hub: &Arc<Hub>, method: &str, params: &[Value]) -> Result<Valu
             let _ = hub::ensure_dir(&dir);
             // aria2's "checksum=sha-256=<hex>"
             let sha256 = opt_str(options, "checksum").and_then(|c| c.split_once('=').filter(|(k, _)| k.eq_ignore_ascii_case("sha-256")).map(|(_, v)| v.to_string()));
-            let gid = hub.add_http(Request { url: uri, dir, name: opt_str(options, "out"), referer: opt_str(options, "referer"), cookie, user_agent, connections, sha256 });
+            // HyperDownload's own: where the browser's download had got to, tried once when the link itself is refused
+            let fallback_url = opt_str(options, "hd-fallback-uri").filter(|u| u.starts_with("http://") || u.starts_with("https://"));
+            let gid = hub.add_http(Request { url: uri, dir, name: opt_str(options, "out"), referer: opt_str(options, "referer"), cookie, user_agent, connections, sha256, fallback_url });
             Ok(json!(gid_text(gid)))
         }
         "aria2.addTorrent" => {

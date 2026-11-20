@@ -295,6 +295,14 @@ fn write_at(f: &File, buf: &[u8], at: u64) -> std::io::Result<()> {
     f.write_all_at(buf, at)
 }
 
+/// The request as sent to `url`: the site's cookies go only to the site they belong to (the browser's final address, tried when
+/// the link is refused, may be another one).
+fn for_url(req: &Request, url: &str) -> Request {
+    let host = |u: &str| u.split_once("://").map(|(_, r)| r.split(['/', '?', '#']).next().unwrap_or("").to_ascii_lowercase()).unwrap_or_default();
+    let same = host(url) == host(&req.url);
+    Request { url: url.to_string(), cookie: if same { req.cookie.clone() } else { None }, ..req.clone() }
+}
+
 fn connections(req: &Request) -> usize {
     if req.connections == 0 { DEFAULT_CONNECTIONS } else { req.connections }
 }
@@ -306,10 +314,18 @@ fn lead(shared: &Arc<Shared>, saved: Option<Saved>) -> Phase {
     let stopped = || shared.cancel.load(Ordering::SeqCst) || shared.pause.load(Ordering::SeqCst);
 
     // ---- the first look
+    let mut fallback = req.fallback_url.clone();
     let probe = loop {
         let url = shared.book.lock().unwrap().url.clone();
-        match net::probe(&agent, &Request { url, ..req.clone() }) {
+        match net::probe(&agent, &for_url(req, &url)) {
             Ok(p) => break p,
+            // refused: once more from the address the browser's own download had reached (a link only a browser may follow, or
+            // one it has used up), without the cookies when that is another site
+            Err(Fail::Refused(_)) if fallback.is_some() => {
+                let to = fallback.take().unwrap_or_default();
+                shared.book.lock().unwrap().url = to;
+                continue;
+            }
             Err(f @ Fail::Refused(_)) => return Phase::Failed(f.to_string()),
             Err(Fail::Again(e)) => {
                 let tries = {
@@ -548,7 +564,7 @@ fn work(shared: &Arc<Shared>, file: &File, agent: &ureq::Agent) {
             shared.changed.notify_all();
         };
         // ---- its bytes
-        let mut body = match net::fetch(agent, &url, &shared.req, from, to, validator.as_deref()) {
+        let mut body = match net::fetch(agent, &url, &for_url(&shared.req, &url), from, to, validator.as_deref()) {
             Ok(r) => r,
             Err(f) => {
                 let tries = {

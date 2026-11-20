@@ -29,6 +29,8 @@ pub struct Request {
     pub user_agent: Option<String>,
     /// Connections at once (at most); 0 is the default ([`DEFAULT_CONNECTIONS`]).
     pub connections: usize,
+    /// Where the browser's own download had got to (after its redirects): tried once when the server refuses `url`.
+    pub fallback_url: Option<String>,
     /// The file's SHA-256 when the caller knows it (aria2's `checksum=sha-256=…`): a file that differs fails.
     pub sha256: Option<String>,
 }
