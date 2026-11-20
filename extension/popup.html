@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>HyperDownload</title>
+<style>
+  :root { color-scheme: dark light; --ember: #ff6a1a; --bg: #141416; --ink: #f2f0ec; --dim: #9d9ba2; --line: #2a2a2f; }
+  @media (prefers-color-scheme: light) { :root { --bg: #fafafa; --ink: #18181b; --dim: #5f5d64; --line: #e4e4e7; } }
+  body { margin: 0; width: 300px; background: var(--bg); color: var(--ink); font: 13px "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 16px 10px; }
+  header img { width: 28px; height: 28px; }
+  header b { font-size: 15px; }
+  .state { font-size: 12px; color: var(--dim); }
+  .state.ok { color: #4ade80; }
+  .state.bad { color: #f87171; }
+  section { padding: 8px 16px 14px; border-top: 1px solid var(--line); }
+  label { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 8px 0; }
+  input[type="number"] { width: 64px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+  textarea { width: 100%; box-sizing: border-box; height: 64px; background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
+  input[type="checkbox"] { accent-color: var(--ember); width: 16px; height: 16px; }
+  .hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <img src="icons/48.png" alt="">
+  <div><b>HyperDownload</b><div class="state" id="state">…</div></div>
+</header>
+<section>
+  <label>Take over downloads <input type="checkbox" id="enabled"></label>
+  <label>Leave files smaller than (MB) to the browser <input type="number" id="minMb" min="0" step="0.5"></label>
+  <div>Sites left to the browser (one per line)</div>
+  <textarea id="excluded" placeholder="example.com"></textarea>
+  <div class="hint">Hold Alt while clicking a link to let the browser download it.</div>
+</section>
+<script src="popup.js"></script>
+</body>
+</html>

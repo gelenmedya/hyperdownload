@@ -6,6 +6,7 @@
 //!   hyperdownload get <url> [folder]          one download on the command line (to try the engine)
 //!   hyperdownload continue <file.hdpart.json> goes on with one
 
+mod host;
 mod hub;
 mod rpc;
 
@@ -28,6 +29,9 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("serve") => serve(&args[1..]),
+        // the browser starts the host with the extension's origin as its argument
+        Some("--native-host") => host::run(),
+        Some(a) if a.starts_with("chrome-extension://") => host::run(),
         Some("get") if args.len() >= 2 => {
             let dir = args.get(2).map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
             follow(Download::start(Request { url: args[1].clone(), dir, ..Default::default() }));

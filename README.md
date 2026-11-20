@@ -35,6 +35,15 @@ What it is being built to do:
 for a choice) and `hd.streamUrl` (a torrent's file to play while it downloads). Requests from web pages (with an `Origin`) and for
 another host name are refused.
 
+## The browser extension
+
+`extension/` is the Chrome and Edge extension (Manifest V3, id `pbnficneolckhnkmpagjimjbhjahcepa` while it is loaded unpacked). It
+hands the browser's downloads to HyperDownload through native messaging (`hyperdownload.exe --native-host`, registered by
+rustyfiles when it installs the add-on). Small files, sites you list and links clicked with Alt held stay with the browser.
+
+To try it before it is in the stores: install HyperDownload from rustyfiles (Settings › Add-ons), open `chrome://extensions`
+(or `edge://extensions`), switch on Developer mode, and "Load unpacked" the `extension` folder.
+
 ## Third-party code
 
 - librqbit and librqbit-dualstack-sockets by Igor Katson, Apache-2.0 (`vendor/`, their notices kept there).
