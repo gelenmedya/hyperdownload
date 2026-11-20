@@ -302,3 +302,26 @@ fn a_refusal_fails_at_once_and_a_taken_name_gets_a_number() {
     assert_eq!(done_path(&d), dir.join("same (2).bin"));
     assert_eq!(std::fs::read(dir.join("same.bin")).unwrap(), b"old");
 }
+
+#[test]
+fn a_program_started_again_lists_an_unfinished_download_paused_and_it_goes_on_when_asked() {
+    let s = serve(6 * MB, Rules { ranges: true, rate: 4 * MB as u64, ..Default::default() });
+    let dir = folder("listed");
+    let d = Download::start(Request { url: url(&s, "l.bin"), dir: dir.clone(), connections: 2, ..Default::default() });
+    while d.status().done < MB as u64 {
+        thread::sleep(Duration::from_millis(20));
+    }
+    d.pause();
+    let kept = d.wait().done;
+    let target = dir.join("l.bin");
+    let listed = Download::paused_from(&state_of(&target), Request::default()).unwrap();
+    let st = listed.status();
+    assert_eq!(st.phase, Phase::Paused);
+    assert_eq!(st.done, kept, "it shows what it has");
+    assert_eq!(listed.target(), Some(target.clone()));
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(listed.status().done, kept, "nothing is fetched before a resume");
+    listed.resume();
+    assert_eq!(done_path(&listed), target);
+    assert_eq!(std::fs::read(&target).unwrap(), *s.body);
+}

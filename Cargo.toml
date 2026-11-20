@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/hd-engine", "crates/hyperdownload"]
+members = ["crates/hd-engine", "crates/hd-torrent", "crates/hyperdownload"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,12 +10,30 @@ publish = false
 
 [workspace.dependencies]
 hd-engine = { path = "crates/hd-engine" }
+hd-torrent = { path = "crates/hd-torrent" }
 # no gzip: a download is asked for in byte ranges, and a compressed answer would break them
 ureq = { version = "3.5", default-features = false, features = ["rustls", "platform-verifier"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [profile.release]
-lto = "thin"
 codegen-units = 1
 strip = true
+
+# truehd (the TrueHD audio decoder) hangs the compiler when optimised (15 GB+ of RAM, 30+ minutes); at opt-level 0 it still decodes
+# about 16x real time. So it alone is built without optimisation, and there is no LTO (it would optimise the same code again).
+[profile.release.package.truehd]
+opt-level = 0
+codegen-units = 16
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.dev.package.truehd]
+opt-level = 0
+
+# librqbit 9.1.0 with torwatch's patches (vendor/librqbit/TORWATCH.md): piece-level selection, unmarking pieces, restoring paused.
+# librqbit-dualstack-sockets 0.7.0 with a one-line cfg fix for iOS.
+[patch.crates-io]
+librqbit = { path = "vendor/librqbit" }
+librqbit-dualstack-sockets = { path = "vendor/librqbit-dualstack-sockets" }

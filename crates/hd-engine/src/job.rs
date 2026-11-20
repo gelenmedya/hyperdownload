@@ -99,6 +99,38 @@ impl Download {
         Ok(d)
     }
 
+    /// A download from its `<file>.hdpart.json`, paused: it shows what it has and goes on at [`Download::resume`] (a program that
+    /// starts again lists its unfinished downloads without fetching anything yet).
+    pub fn paused_from(state: &Path, mut req: Request) -> std::io::Result<Download> {
+        let saved: Saved = serde_json::from_slice(&std::fs::read(state)?).map_err(std::io::Error::other)?;
+        req.url = saved.url.clone();
+        if req.dir.as_os_str().is_empty() {
+            req.dir = state.parent().map(Path::to_path_buf).unwrap_or_default();
+        }
+        let d = Download::new(req);
+        {
+            let mut b = d.shared.book.lock().unwrap();
+            b.phase = Phase::Paused;
+            b.name = Some(saved.name.clone());
+            b.target = Some(d.shared.req.dir.join(&saved.name));
+            b.total = saved.total;
+            b.ranges = true;
+            b.validator = saved.validator.clone();
+            b.busy = vec![false; saved.pieces.len()];
+            b.pieces = saved.pieces;
+        }
+        Ok(d)
+    }
+
+    /// The file it is (or will be) saved as, once known.
+    pub fn target(&self) -> Option<PathBuf> {
+        self.shared.book.lock().unwrap().target.clone()
+    }
+
+    pub fn url(&self) -> String {
+        self.shared.book.lock().unwrap().url.clone()
+    }
+
     fn new(req: Request) -> Download {
         let url = req.url.clone();
         Download { shared: Arc::new(Shared { req, book: Mutex::new(Book::new(url)), changed: Condvar::new(), pause: AtomicBool::new(false), cancel: AtomicBool::new(false) }) }

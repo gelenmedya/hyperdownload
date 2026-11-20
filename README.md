@@ -20,9 +20,23 @@ What it is being built to do:
 | Path | What |
 |---|---|
 | `crates/hd-engine` | The HTTP/HTTPS engine: pieces, pause, resume |
-| `crates/hyperdownload` | The program rustyfiles starts: the engines behind an aria2-compatible JSON-RPC interface |
+| `crates/hd-torrent` | Torrents and magnet links, and watching while downloading (from torwatch): librqbit, the buffer, the local stream, subtitles, audio |
+| `crates/hyperdownload` | The program rustyfiles starts: both engines behind an aria2-compatible JSON-RPC interface |
+| `vendor/librqbit` | [librqbit](https://github.com/ikatson/rqbit) 9.1.0 (Apache-2.0) with a few patches, listed in `vendor/librqbit/TORWATCH.md` |
 
-The BitTorrent engine is [librqbit](https://github.com/ikatson/rqbit) (Apache-2.0).
+## The interface
+
+`hyperdownload serve` listens on `127.0.0.1` on a free port and writes the port and a secret to
+`%LOCALAPPDATA%\HyperDownloadpc.json`. `POST /jsonrpc` takes aria2's JSON-RPC (`aria2.addUri`, `aria2.addTorrent`,
+`aria2.tellStatus`, `aria2.pause`, `aria2.unpause`, `aria2.remove`, `aria2.changeOption` with `select-file`, ...), with
+`"token:<secret>"` as the first parameter. HyperDownload's own calls: `hd.choices` and `hd.choose` (a torrent's file list waiting
+for a choice) and `hd.streamUrl` (a torrent's file to play while it downloads). Requests from web pages (with an `Origin`) and for
+another host name are refused.
+
+## Third-party code
+
+- librqbit and librqbit-dualstack-sockets by Igor Katson, Apache-2.0 (`vendor/`, their notices kept there).
+- The audio decoders and the container readers are crates under MIT or Apache-2.0 (see `Cargo.lock`).
 
 ## Licence
 
