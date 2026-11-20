@@ -27,7 +27,7 @@ What it is being built to do:
 ## The interface
 
 `hyperdownload serve` listens on `127.0.0.1` on a free port and writes the port and a secret to
-`%LOCALAPPDATA%\HyperDownloadpc.json`. `POST /jsonrpc` takes aria2's JSON-RPC (`aria2.addUri`, `aria2.addTorrent`,
+`%LOCALAPPDATA%\HyperDownload\rpc.json`. `POST /jsonrpc` takes aria2's JSON-RPC (`aria2.addUri`, `aria2.addTorrent`,
 `aria2.tellStatus`, `aria2.pause`, `aria2.unpause`, `aria2.remove`, `aria2.changeOption` with `select-file`, ...), with
 `"token:<secret>"` as the first parameter. HyperDownload's own calls: `hd.choices` and `hd.choose` (a torrent's file list waiting
 for a choice) and `hd.streamUrl` (a torrent's file to play while it downloads). Requests from web pages (with an `Origin`) and for
