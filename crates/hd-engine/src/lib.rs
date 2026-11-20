@@ -5,6 +5,7 @@
 //! [`Download::pause`], [`Download::resume`] and [`Download::cancel`] steer it. While it runs the file is `<name>.hdpart` with
 //! `<name>.hdpart.json` beside it ([`pieces::Saved`]); finished, it gets its name.
 
+pub mod check;
 pub mod names;
 pub mod pieces;
 mod job;
@@ -28,6 +29,8 @@ pub struct Request {
     pub user_agent: Option<String>,
     /// Connections at once (at most); 0 is the default ([`DEFAULT_CONNECTIONS`]).
     pub connections: usize,
+    /// The file's SHA-256 when the caller knows it (aria2's `checksum=sha-256=…`): a file that differs fails.
+    pub sha256: Option<String>,
 }
 
 pub const DEFAULT_CONNECTIONS: usize = 8;

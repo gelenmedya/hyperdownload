@@ -126,7 +126,9 @@ async fn dispatch(hub: &Arc<Hub>, method: &str, params: &[Value]) -> Result<Valu
             }
             let connections = opt_str(options, "split").or_else(|| opt_str(options, "max-connection-per-server")).and_then(|s| s.parse().ok()).unwrap_or(0);
             let _ = hub::ensure_dir(&dir);
-            let gid = hub.add_http(Request { url: uri, dir, name: opt_str(options, "out"), referer: opt_str(options, "referer"), cookie, user_agent, connections });
+            // aria2's "checksum=sha-256=<hex>"
+            let sha256 = opt_str(options, "checksum").and_then(|c| c.split_once('=').filter(|(k, _)| k.eq_ignore_ascii_case("sha-256")).map(|(_, v)| v.to_string()));
+            let gid = hub.add_http(Request { url: uri, dir, name: opt_str(options, "out"), referer: opt_str(options, "referer"), cookie, user_agent, connections, sha256 });
             Ok(json!(gid_text(gid)))
         }
         "aria2.addTorrent" => {

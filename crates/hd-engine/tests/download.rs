@@ -325,3 +325,31 @@ fn a_program_started_again_lists_an_unfinished_download_paused_and_it_goes_on_wh
     assert_eq!(done_path(&listed), target);
     assert_eq!(std::fs::read(&target).unwrap(), *s.body);
 }
+
+#[test]
+fn a_known_checksum_is_checked_and_the_file_is_marked_as_from_the_internet() {
+    let s = serve(2 * MB, Rules { ranges: true, ..Default::default() });
+    let dir = folder("check");
+    // the wrong checksum: no file is left under its name
+    let d = Download::start(Request { url: url(&s, "c.bin"), dir: dir.clone(), sha256: Some("00".repeat(32)), ..Default::default() });
+    assert!(matches!(d.wait().phase, Phase::Failed(ref e) if e.contains("SHA-256")));
+    assert!(!dir.join("c.bin").exists() && !part_of(&dir.join("c.bin")).exists());
+    // the right one, in capitals
+    let right = hd_engine::check::sha256_of(&{
+        let p = dir.join("expected.bin");
+        std::fs::write(&p, &*s.body).unwrap();
+        p
+    })
+    .unwrap()
+    .to_uppercase();
+    let d = Download::start(Request { url: url(&s, "c.bin"), dir: dir.clone(), sha256: Some(right), referer: Some("https://example.com/page".into()), ..Default::default() });
+    let p = done_path(&d);
+    assert_eq!(std::fs::read(&p).unwrap(), *s.body);
+    #[cfg(windows)]
+    {
+        let mut zone = p.as_os_str().to_owned();
+        zone.push(":Zone.Identifier");
+        let text = std::fs::read_to_string(zone).expect("the Zone.Identifier stream");
+        assert!(text.contains("ZoneId=3") && text.contains("ReferrerUrl=https://example.com/page") && text.contains("/c.bin"), "{text}");
+    }
+}

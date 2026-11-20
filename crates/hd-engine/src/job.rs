@@ -483,6 +483,17 @@ fn rest(shared: &Shared, tries: u32) -> bool {
 fn finish(shared: &Shared, file: Arc<File>, target: &Path) -> Phase {
     let _ = file.sync_all();
     drop(file);
+    // the checksum the caller knows: a file that is not it is not given its name
+    if let Some(want) = &shared.req.sha256 {
+        match crate::check::sha256_of(&part_of(target)) {
+            Ok(got) if got.eq_ignore_ascii_case(want.trim()) => {}
+            Ok(got) => {
+                remove_part(target);
+                return Phase::Failed(format!("the file arrived different from the expected one (SHA-256 {got}, expected {want})"));
+            }
+            Err(e) => return Phase::Failed(e.to_string()),
+        }
+    }
     let to = if target.exists() {
         let name = target.file_name().unwrap_or_default().to_string_lossy().into_owned();
         names::free_path(target.parent().unwrap_or(Path::new("")), &name, |p| p.exists())
@@ -492,6 +503,8 @@ fn finish(shared: &Shared, file: Arc<File>, target: &Path) -> Phase {
     match std::fs::rename(part_of(target), &to) {
         Ok(()) => {
             let _ = std::fs::remove_file(state_of(target));
+            // marked as coming from the internet, as browsers mark their downloads (Defender and SmartScreen look at it)
+            crate::check::mark_of_the_web(&to, &shared.req.url, shared.req.referer.as_deref());
             let mut b = shared.book.lock().unwrap();
             b.name = to.file_name().map(|n| n.to_string_lossy().into_owned());
             b.target = Some(to.clone());
