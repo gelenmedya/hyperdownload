@@ -451,9 +451,13 @@ fn lead(shared: &Arc<Shared>, saved: Option<Saved>) -> Phase {
     drop(probe.body);
 
     // ---- ranges: the workers
+    // With no count asked for, a few connections first, then one more while each added one still makes it faster (`Grower`); a
+    // count the caller asked for is used as it is.
     let count = shared.book.lock().unwrap().pieces.len();
+    let mut grower = (req.connections == 0).then(Grower::new);
+    let first = if grower.is_some() { START_CONNECTIONS } else { connections(req) };
     let mut handles = Vec::new();
-    for _ in 0..connections(req).min(count.max(1)) {
+    for _ in 0..first.min(count.max(1)) {
         let (shared, file, agent) = (shared.clone(), file.clone(), agent.clone());
         handles.push(thread::spawn(move || work(&shared, &file, &agent)));
     }
@@ -462,14 +466,24 @@ fn lead(shared: &Arc<Shared>, saved: Option<Saved>) -> Phase {
     let mut meter = Meter::new();
     let mut saved_at = Instant::now();
     loop {
-        let (finished, done, saved) = {
+        let (finished, done, saved, speed, workers, left) = {
             let b = shared.book.lock().unwrap();
             let (mut b, _) = shared.changed.wait_timeout(b, Duration::from_millis(250)).unwrap();
             let done = b.done();
             b.speed = meter.add(done);
-            (b.workers == 0 || b.pieces.iter().all(Piece::finished), done, b.saved())
+            let left = b.total.map_or(0, |t| t.saturating_sub(done));
+            (b.workers == 0 || b.pieces.iter().all(Piece::finished), done, b.saved(), b.speed, b.workers, left)
         };
         let _ = done;
+        if let Some(g) = grower.as_mut()
+            && !finished
+            && !stopped()
+            && g.wants_one_more(Instant::now(), speed, workers, left)
+        {
+            let (sh, file, agent) = (shared.clone(), file.clone(), agent.clone());
+            shared.book.lock().unwrap().workers += 1;
+            handles.push(thread::spawn(move || work(&sh, &file, &agent)));
+        }
         if saved_at.elapsed() >= Duration::from_secs(2) {
             if let Some(s) = saved {
                 write_state(&target, &s);
@@ -655,6 +669,56 @@ fn work(shared: &Arc<Shared>, file: &File, agent: &ureq::Agent) {
 }
 
 /// Bytes a second over the last few seconds.
+/// Connections a download starts with when the caller asked for no count, and the most it grows to.
+const START_CONNECTIONS: usize = 4;
+const MOST_CONNECTIONS: usize = 16;
+/// How long a connection count is given before the speed is compared, and the gain that makes one more worth it.
+const GROW_EVERY: Duration = Duration::from_secs(3);
+const GROW_GAIN: f64 = 1.10;
+/// An added connection gets at least this much of what is left.
+const GROW_LEFT_EACH: u64 = 4 * 1024 * 1024;
+
+/// One more connection while each added one still made the download faster: a server or a line that is the limit gets no more
+/// connections than help (two additions in a row that did not raise the speed by 10% end the growing). Pure, given the times.
+struct Grower {
+    since: Option<Instant>,
+    speed_before: u64,
+    misses: u8,
+}
+
+impl Grower {
+    fn new() -> Grower {
+        Grower { since: None, speed_before: 0, misses: 0 }
+    }
+
+    fn wants_one_more(&mut self, now: Instant, speed: u64, workers: usize, left: u64) -> bool {
+        let Some(since) = self.since else {
+            // (the first look: the clock starts with the first workers)
+            self.since = Some(now);
+            return false;
+        };
+        if self.misses >= 2 || now.duration_since(since) < GROW_EVERY || speed == 0 {
+            return false;
+        }
+        if self.speed_before > 0 {
+            if (speed as f64) < self.speed_before as f64 * GROW_GAIN {
+                self.misses += 1;
+            } else {
+                self.misses = 0;
+            }
+            if self.misses >= 2 {
+                return false;
+            }
+        }
+        self.since = Some(now);
+        if workers >= MOST_CONNECTIONS || left < GROW_LEFT_EACH * (workers as u64 + 1) {
+            return false;
+        }
+        self.speed_before = speed;
+        true
+    }
+}
+
 struct Meter {
     samples: std::collections::VecDeque<(Instant, u64)>,
 }
@@ -673,5 +737,37 @@ impl Meter {
         let (t0, b0) = self.samples[0];
         let secs = now.duration_since(t0).as_secs_f64();
         if secs < 0.2 { 0 } else { (total.saturating_sub(b0) as f64 / secs) as u64 }
+    }
+}
+
+#[cfg(test)]
+mod grow_tests {
+    use super::*;
+
+    const MB: u64 = 1024 * 1024;
+
+    #[test]
+    fn connections_are_added_while_they_make_it_faster() {
+        let t0 = Instant::now();
+        let at = |s: u64| t0 + Duration::from_secs(s);
+        let mut g = Grower::new();
+        assert!(!g.wants_one_more(at(0), 0, 4, 500 * MB), "the first look only starts the clock");
+        assert!(!g.wants_one_more(at(1), 10 * MB, 4, 500 * MB), "too soon");
+        assert!(g.wants_one_more(at(3), 10 * MB, 4, 500 * MB), "a fifth");
+        assert!(g.wants_one_more(at(6), 13 * MB, 5, 500 * MB), "it helped: a sixth");
+        assert!(g.wants_one_more(at(9), 13 * MB, 6, 500 * MB), "one miss is not the end");
+        assert!(!g.wants_one_more(at(12), 13 * MB, 7, 500 * MB), "two misses in a row: the line is the limit");
+        assert!(!g.wants_one_more(at(30), 40 * MB, 7, 500 * MB), "and it stays so");
+    }
+
+    #[test]
+    fn no_more_than_the_most_nor_for_little_left() {
+        let t0 = Instant::now();
+        let mut g = Grower::new();
+        g.wants_one_more(t0, 0, 16, 500 * MB);
+        assert!(!g.wants_one_more(t0 + Duration::from_secs(3), 10 * MB, MOST_CONNECTIONS, 500 * MB));
+        let mut g = Grower::new();
+        g.wants_one_more(t0, 0, 4, 10 * MB);
+        assert!(!g.wants_one_more(t0 + Duration::from_secs(3), 10 * MB, 4, 10 * MB), "10 MB left is no work for five");
     }
 }
